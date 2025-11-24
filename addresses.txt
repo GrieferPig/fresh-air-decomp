@@ -47,6 +47,7 @@ decomp_base = 180000000
 
 00007FFB3CFC5220 // compressor 000000000C8FC7D0 (dynamic: high-air)
 state base: 38 E7 6B 0C 00 00 00 00
+0c6be738
 change:
     000000000C6C861C (Thres) (8 bytes)
     000000000C6C8628 (Shaping) (8 bytes)

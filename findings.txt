@@ -1,0 +1,172 @@
+1. Executive Summary
+
+Fresh Air is not a saturation or distortion plugin in the traditional sense (it contains no waveshaping functions like tanh, sin, or hard clipping).
+
+It is a Parallel, Multi-Band, Dynamic Equalizer / Exciter based on the Dolby A-Type Noise Reduction decoding trick. It generates "Air" and "Presence" by isolating high-frequency bands and aggressively expanding (boosting) their volume based on input intensity, then limiting the peaks to prevent digital clipping.
+
+2. The Architecture
+
+The plugin uses a Parallel Topology with 4 internal lanes, running at 4x Oversampling (176.4kHz).
+
+Lane 0 (Mid Air): The "Presence" Engine.
+
+Lane 1 (High Air): The "Sparkle" Engine.
+
+Lane 2 (Output): Master Trim & Dry signal path.
+
+Lane 3: Unused.
+
+Signal Flow:
+Input 
+→
+→
+ Splitter (Copy to all lanes) 
+→
+→
+ Process Lanes Independently 
+→
+→
+ Sum Output 
+→
+→
+ Trim.
+
+3. Detailed Signal Path Analysis
+Lane 0: Mid Air (Band 0)
+
+This band adds "body" and "snap" to the high-mids (approx 2kHz–5kHz).
+
+Static Filter: A Zero-Delay Feedback (ZDF) filter.
+
+Coefficients: Fixed (Extracted: 0.217, 0.793...).
+
+Function: Isolates the Mid-High frequencies.
+
+Pre-Compressor Gain: Controlled by the Mid Air Knob.
+
+Curve: 
+𝐺
+𝑎
+𝑖
+𝑛
+=
+1.245
+×
+𝐾
+𝑛
+𝑜
+𝑏
+0.8
+Gain=1.245×Knob
+0.8
+.
+
+Offset: Subtracts 0.05 to allow silence at 0%.
+
+Dynamics (Upward Expander):
+
+Threshold: Fixed at -30dB (0.0316).
+
+Mechanism: As the knob boosts the Input Gain (Step 2), the signal pushes harder past the fixed threshold, causing the expander to engage.
+
+Lane 1: High Air (Band 1)
+
+This band adds "shimmer" and "sheen" (approx 10kHz+).
+
+Static Filter: A ZDF filter.
+
+Coefficients: Fixed (Extracted: 0.746, 0.707...).
+
+Function: Isolates the High frequencies.
+
+Dynamics A (Gate): Static settings. Cleans up the noise floor before boosting.
+
+Gain (Boost): Controlled by High Air Knob.
+
+Curve: 
+𝐺
+𝑎
+𝑖
+𝑛
+=
+1.0
++
+0.9
+×
+𝐾
+𝑛
+𝑜
+𝑏
+0.8
+Gain=1.0+0.9×Knob
+0.8
+.
+
+Function: Linearly boosts the volume of the highs.
+
+Dynamics B (Limiter): Controlled by High Air Knob (Macro).
+
+Threshold: Drops from -6dB to -17dB as knob increases.
+
+Ratio/Slope: Tightens from 1.3:1 to 2:1.
+
+Function: As volume increases, this clamps down on peaks to increase density without piercing transients.
+
+Lane 2: Output
+
+Summing: Adds the processed Mid and High bands back to the dry/bass signal.
+
+Trim: Linear Gain (
+±
+±
+ dB).
+
+Static Pad: Fixed gain of 0.822 (-1.7dB) to provide summing headroom.
+
+4. The DSP Algorithms
+The Filter (eq_filter.c / UnknownFilter)
+
+Type: Linear Time-Invariant (LTI) State Variable Filter (SVF) using a Zero-Delay Feedback topology.
+
+Key Finding: The state update (S0, S1...) must happen before the output calculation within the loop. Failure to do this causes a lower Q-factor and phase smearing.
+
+Coefficients: Pre-calculated doubles stored statically in the binary.
+
+The Dynamics (compressor.c / UnknownCompressor)
+
+Type: Digital Feedback Compressor/Expander.
+
+Detector: Switchable RMS (for Mid Band) or Peak (for High Band).
+
+Math: Uses standard envelope following (Attack/Release coefficients) and a gain computer based on pow(Ratio, Slope).
+
+The Gain (gain.c)
+
+Type: Smoothed Linear Gain.
+
+Feature: Uses a linear interpolation ramp per-block to prevent "zipper noise" when knobs are moved.
+
+5. Reconstruction Requirements (The Clone)
+
+To build a perfect clone of Fresh Air, your code must:
+
+Oversample: Run the entire processing chain at 176.4kHz (4x). The extracted filter coefficients are tuned for this rate.
+
+Use Big Endian: When parsing the raw hex dumps of parameters from the MID_GAIN tables, interpret them as Big Endian floats.
+
+Map the Curves:
+
+Mid Air = Input Gain Control into Fixed Thresh.
+
+High Air = Macro Control (Gain 
+↑
+↑
+, Thresh 
+↓
+↓
+, Ratio 
+↑
+↑
+).
+
+Final Verdict: The plugin's "magic" comes from the specific tuning of the fixed filters combined with the interaction between the Gain and the Limiter/Expander thresholds. It is a masterclass in Dynamic Gain Staging, not Harmonic Distortion.
